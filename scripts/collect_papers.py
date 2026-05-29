@@ -52,6 +52,8 @@ class SourceConfig:
     name: str
     url: str = ""
     enabled: bool = True
+    headers_env: str = ""
+    bearer_token_env: str = ""
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -126,6 +128,8 @@ def parse_sources(config: dict[str, Any]) -> list[SourceConfig]:
                 name=name,
                 url=str(item.get("url") or ""),
                 enabled=bool(item.get("enabled", True)),
+                headers_env=str(item.get("headers_env") or ""),
+                bearer_token_env=str(item.get("bearer_token_env") or ""),
             )
         )
     return sources
@@ -240,6 +244,25 @@ def request_bytes(url: str, headers: dict[str, str] | None = None, timeout: floa
     req = urllib.request.Request(url, headers=headers or {"User-Agent": "paper-daily-collector/1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return resp.read()
+
+
+def source_request_headers(source: SourceConfig) -> dict[str, str]:
+    headers = {"User-Agent": "paper-daily-collector/1.0"}
+    if source.headers_env:
+        raw_headers = os.getenv(source.headers_env, "")
+        if raw_headers:
+            try:
+                configured_headers = json.loads(raw_headers)
+            except json.JSONDecodeError as exc:
+                raise ValueError(f"{source.headers_env} must contain a JSON object of HTTP headers") from exc
+            if not isinstance(configured_headers, dict):
+                raise ValueError(f"{source.headers_env} must contain a JSON object of HTTP headers")
+            headers.update({str(key): str(value) for key, value in configured_headers.items()})
+    if source.bearer_token_env:
+        token = os.getenv(source.bearer_token_env, "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+    return headers
 
 
 def arxiv_retry_wait_seconds(exc: Exception, attempt: int) -> float:
@@ -555,7 +578,11 @@ def link_from_atom(entry: ET.Element) -> str:
 def fetch_feed(source: SourceConfig, max_results: int) -> list[dict[str, Any]]:
     if not source.url:
         return []
-    xml_data = request_bytes(source.url, timeout=float(os.getenv("FEED_TIMEOUT_SECONDS", "60")))
+    xml_data = request_bytes(
+        source.url,
+        headers=source_request_headers(source),
+        timeout=float(os.getenv("FEED_TIMEOUT_SECONDS", "60")),
+    )
     root = ET.fromstring(xml_data)
     papers = []
     atom_entries = root.findall("atom:entry", FEED_NAMESPACES)

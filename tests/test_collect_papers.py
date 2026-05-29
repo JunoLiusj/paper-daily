@@ -10,6 +10,8 @@ from scripts.collect_papers import (
     merge_with_retained_papers,
     openalex_abstract_text,
     parse_sources,
+    source_request_headers,
+    SourceConfig,
     trim_papers_for_storage,
 )
 
@@ -36,6 +38,8 @@ class RetentionTest(unittest.TestCase):
         os.environ.pop("ARXIV_RETRY_MIN_SECONDS", None)
         os.environ.pop("ARXIV_RETRY_BASE_SECONDS", None)
         os.environ.pop("ARXIV_RETRY_MAX_SECONDS", None)
+        os.environ.pop("CUSTOM_FEED_HEADERS", None)
+        os.environ.pop("CUSTOM_FEED_BEARER_TOKEN", None)
 
     def test_arxiv_retry_wait_uses_retry_after_header(self) -> None:
         os.environ["ARXIV_RETRY_MIN_SECONDS"] = "30"
@@ -82,7 +86,12 @@ class RetentionTest(unittest.TestCase):
             {
                 "sources": [
                     "arxiv",
-                    {"type": "feed", "name": "Journal Feed", "url": "https://example.com/rss.xml"},
+                    {
+                        "type": "feed",
+                        "name": "Journal Feed",
+                        "url": "https://example.com/rss.xml",
+                        "headers_env": "CUSTOM_FEED_HEADERS",
+                    },
                     {"type": "crossref", "enabled": False},
                 ]
             }
@@ -91,6 +100,24 @@ class RetentionTest(unittest.TestCase):
         self.assertEqual([source.type for source in sources], ["arxiv", "feed"])
         self.assertEqual(sources[1].name, "Journal Feed")
         self.assertEqual(sources[1].url, "https://example.com/rss.xml")
+        self.assertEqual(sources[1].headers_env, "CUSTOM_FEED_HEADERS")
+
+    def test_source_request_headers_reads_secret_envs(self) -> None:
+        os.environ["CUSTOM_FEED_HEADERS"] = '{"X-API-Key": "secret"}'
+        os.environ["CUSTOM_FEED_BEARER_TOKEN"] = "token"
+
+        headers = source_request_headers(
+            SourceConfig(
+                type="feed",
+                name="Private Feed",
+                url="https://example.com/feed.xml",
+                headers_env="CUSTOM_FEED_HEADERS",
+                bearer_token_env="CUSTOM_FEED_BEARER_TOKEN",
+            )
+        )
+
+        self.assertEqual(headers["X-API-Key"], "secret")
+        self.assertEqual(headers["Authorization"], "Bearer token")
 
     def test_openalex_abstract_text_reconstructs_inverted_index(self) -> None:
         abstract = openalex_abstract_text({"abstract_inverted_index": {"hello": [0], "world": [1]}})

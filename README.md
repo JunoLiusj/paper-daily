@@ -100,7 +100,7 @@ https://Futuresxy.github.io/paper-daily/
 - `semantic_scholar`：Semantic Scholar Graph API，适合补充摘要、开放 PDF 和引用相关元数据。
 - `google_scholar_serpapi`：通过 SerpApi 的 Google Scholar API 搜索，需要 `SERPAPI_API_KEY`，默认不启用。
 
-你也可以在 Issue JSON 顶层添加 `sources`，只启用自己需要的来源：
+你可以在 Issue JSON 顶层添加 `sources`，只启用自己需要的来源。没有配置 `sources` 时，会使用默认来源：
 
 ```json
 {
@@ -114,9 +114,155 @@ https://Futuresxy.github.io/paper-daily/
 }
 ```
 
-`feed` 支持 RSS 和 Atom，可用于自定义论文站点、期刊目录页、实验室论文列表等公开订阅源。Google Scholar 没有稳定官方公开 API，不建议直接爬网页；如果确实需要 Google Scholar，可以启用 `google_scholar_serpapi` 并配置 SerpApi Key，或者把第三方服务转成 RSS/Atom 后用 `feed` 接入。
+#### 自定义论文网站或期刊网站
 
-可选的 Actions Variables：
+推荐优先使用网站提供的 RSS、Atom、OAI、API 或“最新文章订阅”链接，然后配置成 `feed`：
+
+```json
+{
+  "sources": [
+    {
+      "type": "feed",
+      "name": "Nature Machine Intelligence",
+      "url": "https://www.nature.com/natmachintell.rss"
+    },
+    {
+      "type": "feed",
+      "name": "自定义实验室论文",
+      "url": "https://example.edu/lab/publications.atom"
+    }
+  ],
+  "topics": []
+}
+```
+
+`feed` 支持 RSS 和 Atom。它适合：
+
+- 期刊 RSS/Atom。
+- 会议或 workshop 的 accepted papers feed。
+- 实验室、个人主页、机构仓库的论文订阅源。
+- 你自己搭建的中转服务，把任意论文网站转换成 RSS/Atom。
+
+如果目标网站只有普通 HTML 页面、需要浏览器渲染、验证码、搜索表单或复杂分页，当前采集器不会直接爬网页。更稳妥的做法是：用网站官方 API/RSS；或自己写一个小的代理服务，把它转换成 RSS/Atom 后再接入 `feed`。
+
+#### 需要登录或 Token 的网站
+
+不要把账号、密码、Cookie、Token 直接写进 Issue JSON 或 `config/interests.json`。这些配置会进入仓库历史或 Issue 页面，不安全。
+
+对于需要认证的 RSS/Atom/API 代理，先在仓库中添加 Secrets：
+
+```text
+Settings -> Secrets and variables -> Actions -> Secrets -> New repository secret
+```
+
+常用两种方式：
+
+1. Bearer Token：
+
+添加 Secret：
+
+| Name | Secret |
+| --- | --- |
+| `CUSTOM_FEED_BEARER_TOKEN` | 你的访问 Token |
+
+然后在 `sources` 中引用这个 Secret 的环境变量名：
+
+```json
+{
+  "sources": [
+    {
+      "type": "feed",
+      "name": "Private Paper Feed",
+      "url": "https://example.com/private/feed.xml",
+      "bearer_token_env": "CUSTOM_FEED_BEARER_TOKEN"
+    }
+  ],
+  "topics": []
+}
+```
+
+采集器请求时会自动加：
+
+```text
+Authorization: Bearer <CUSTOM_FEED_BEARER_TOKEN>
+```
+
+2. 自定义 HTTP Headers：
+
+添加 Secret：
+
+| Name | Secret |
+| --- | --- |
+| `CUSTOM_FEED_HEADERS` | `{"X-API-Key":"你的 key"}` |
+
+然后配置：
+
+```json
+{
+  "sources": [
+    {
+      "type": "feed",
+      "name": "Authenticated Journal Feed",
+      "url": "https://example.com/feed.xml",
+      "headers_env": "CUSTOM_FEED_HEADERS"
+    }
+  ],
+  "topics": []
+}
+```
+
+`CUSTOM_FEED_HEADERS` 必须是 JSON object。也可以包含 Cookie，但不推荐长期依赖 Cookie；Cookie 容易过期，也可能违反目标网站规则。更建议使用官方 API Token 或你自己的代理服务。
+
+#### Google Scholar
+
+Google Scholar 没有稳定官方公开 API，不建议直接爬网页。直接爬 Google Scholar 往往会遇到验证码、封 IP、HTML 结构变化和服务条款风险。
+
+如果确实需要 Google Scholar，有两个推荐方式：
+
+1. 使用 SerpApi：
+
+添加 Secret：
+
+| Name | Secret |
+| --- | --- |
+| `SERPAPI_API_KEY` | 你的 SerpApi Key |
+
+然后在 `sources` 中启用：
+
+```json
+{
+  "sources": [
+    {
+      "type": "google_scholar_serpapi",
+      "name": "Google Scholar"
+    }
+  ],
+  "topics": []
+}
+```
+
+2. 使用第三方或自建服务转成 RSS/Atom：
+
+```json
+{
+  "sources": [
+    {
+      "type": "feed",
+      "name": "Google Scholar Proxy Feed",
+      "url": "https://example.com/google-scholar-feed.xml"
+    }
+  ],
+  "topics": []
+}
+```
+
+#### 访问失败时的行为
+
+每个来源独立运行。某个来源出现超时、429、503、认证失败或格式错误时，会记录 warning 和 `stats.source_stats`，但不会让整个采集流程崩溃。
+
+如果所有来源都失败，并且已有历史论文数据，系统会保留已有数据，避免网页被清空。
+
+可选的 Actions Variables / Secrets：
 
 | Name | 示例 | 说明 |
 | --- | --- | --- |
@@ -126,6 +272,8 @@ https://Futuresxy.github.io/paper-daily/
 | `OPENALEX_EMAIL` | `you@example.com` | 只给 OpenAlex 使用的邮箱 |
 | `SEMANTIC_SCHOLAR_API_KEY` | `...` | Semantic Scholar API Key，可提高稳定性 |
 | `SERPAPI_API_KEY` | `...` | 启用 `google_scholar_serpapi` 时需要 |
+| `CUSTOM_FEED_HEADERS` | `{"X-API-Key":"..."}` | 自定义 feed/API 代理需要额外 HTTP headers 时使用，建议配置为 Secret |
+| `CUSTOM_FEED_BEARER_TOKEN` | `...` | 自定义 feed/API 代理需要 Bearer Token 时使用，建议配置为 Secret |
 | `SOURCE_DELAY_SECONDS` | `3` | 非 arXiv 来源的 topic 请求间隔 |
 
 ## 第 4 步：配置模型 API Key（可选）

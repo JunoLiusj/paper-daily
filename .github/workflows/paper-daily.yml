@@ -60,6 +60,8 @@ jobs:
           SOURCE_DELAY_SECONDS: ${{ vars.SOURCE_DELAY_SECONDS || '3' }}
           SEMANTIC_SCHOLAR_API_KEY: ${{ secrets.SEMANTIC_SCHOLAR_API_KEY }}
           SERPAPI_API_KEY: ${{ secrets.SERPAPI_API_KEY }}
+          CUSTOM_FEED_HEADERS: ${{ secrets.CUSTOM_FEED_HEADERS }}
+          CUSTOM_FEED_BEARER_TOKEN: ${{ secrets.CUSTOM_FEED_BEARER_TOKEN }}
           INCREMENTAL_SINCE_LAST_RUN: ${{ github.event_name == 'schedule' && 'true' || vars.INCREMENTAL_SINCE_LAST_RUN || 'false' }}
           LLM_CONCURRENCY: ${{ vars.LLM_CONCURRENCY || '2' }}
           LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
